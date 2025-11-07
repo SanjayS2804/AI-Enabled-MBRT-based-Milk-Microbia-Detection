@@ -1,0 +1,276 @@
+import io, re, ast
+import numpy as np
+import pandas as pd
+from PIL import Image
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+from google.colab import files
+LABEL_MAP = {"Fresh":0, "Mild Spoiled":1, "Spoiled":2, "Unknown":-1}
+INV_LABEL_MAP = {v:k for k,v in LABEL_MAP.items() if v!=-1}
+rois = {
+    "Tube 1": (100, 30, 90, 50),
+    "Tube 2": (264, 34, 80, 55),
+    "Tube 3": (413, 50, 87, 50)
+}
+# ===============================
+# HELPER FUNCTIONS
+# ===============================
+
+def _parse_rgb_tuple(s):
+    if isinstance(s, (list, tuple, np.ndarray)) and len(s)==3:
+        return list(map(int, s))
+    if isinstance(s, str):
+        s = s.strip().strip("()[]").replace(" ", "")
+        if re.match(r"^\d+,\d+,\d+$", s):
+            return list(map(int, s.split(",")))
+        try:
+            v = ast.literal_eval(s)
+            if isinstance(v, (list, tuple)) and len(v)==3:
+                return list(map(int, v))
+        except Exception:
+            pass
+return [np.nan, np.nan, np.nan]
+
+# Load MBRT CSV data
+def load_mbrt_csvlike(csv_input):
+    df = pd.read_csv(csv_input)
+    cols = {c.lower(): c for c in df.columns}
+
+    def find_col(key_options):
+        for opt in key_options:
+            for lc, orig in cols.items():
+                if opt in lc: return orig
+        return None
+    time_col = find_col(['time','min'])
+    sample_col = find_col(['sample','sample name','sample_name','id'])
+
+    label_col = find_col(['milk type','label','milk_type','milktype'])
+    gamma_col = find_col(['gamma'])
+
+    r_col = find_col(['^r$',' r ',' r_','r_',' red '])
+    g_col = find_col(['^g$',' g ',' g_','g_',' green '])
+    b_col = find_col(['^b$',' b ',' b_','b_',' blue '])
+    rgb_col = next((c for c in df.columns if 'rgb' in c.lower() or 'avg' in c.lower()), None)
+
+    if time_col is None or sample_col is None or label_col is None:
+        raise ValueError("CSV must include time, sample name, and milk type columns")
+
+    out = pd.DataFrame()
+    out['time_min'] = pd.to_numeric(df[time_col], errors='coerce')
+    out['sample'] = df[sample_col].astype(str)
+    out['label_raw'] = df[label_col].astype(str)
+
+    # Normalize label
+    def norm_label(s):
+        s = str(s).strip().lower()
+        if 'fresh' in s: return 'Fresh'
+        if 'mild' in s or 'mildly' in s: return 'Mild Spoiled'
+        if 'spoil' in s or 'bad' in s: return 'Spoiled'
+        return 'Unknown'
+
+    out['label_name'] = out['label_raw'].apply(norm_label)
+    out['label'] = out['label_name'].map(LABEL_MAP)
+
+    if gamma_col is not None:
+        out['gamma'] = pd.to_numeric(df[gamma_col], errors='coerce')
+    else:
+        out['gamma'] = np.nan
+
+    if r_col is not None and g_col is not None and b_col is not None:
+        out['R'] = pd.to_numeric(df[r_col], errors='coerce')
+        out['G'] = pd.to_numeric(df[g_col], errors='coerce')
+        out['B'] = pd.to_numeric(df[b_col], errors='coerce')
+    elif rgb_col is not None:
+        rgb_vals = df[rgb_col].apply(_parse_rgb_tuple).to_list()
+        rgb_arr = np.vstack(rgb_vals)
+        out['R'], out['G'], out['B'] = rgb_arr[:,0], rgb_arr[:,1], rgb_arr[:,2]
+    else:
+        raise ValueError("Could not find RGB information in CSV")
+
+    mask = (~out[['time_min','sample','label','R','G','B']].isna()).all(axis=1) & (out['label']!=-1)
+    out = out[mask].copy()
+    return out
+# Train Random Forest
+def train_full_rgb_model(X, y, model_out='milk_mbrt_full_rf.joblib'):
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('rf', RandomForestClassifier(n_estimators=300, random_state=42, class_weight='balanced_subsample'))
+    ])
+    pipe.fit(X_tr, y_tr)
+    y_pr = pipe.predict(X_te)
+
+    acc = accuracy_score(y_te, y_pr)
+    print(f"\nAccuracy: {acc:.4f}")
+
+    cm = confusion_matrix(y_te, y_pr)
+    classes_present = np.unique(y_te)
+    target_names_present = [INV_LABEL_MAP[i] for i in classes_present]
+
+    plt.figure(figsize=(6,5))
+    sns.heatmap(cm, annot=True, fmt='d', xticklabels=target_names_present, yticklabels=target_names_present, cmap='Blues')
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.title("Confusion Matrix")
+    plt.show()
+
+    print("\nClassification Report:\n", classification_report(y_te, y_pr, labels=classes_present, target_names=target_names_present))
+
+    joblib.dump(pipe, model_out)
+    print(f"Saved model → {model_out}")
+    return pipe
+# Train Random Forest
+def train_full_rgb_model(X, y, model_out='milk_mbrt_full_rf.joblib'):
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('rf', RandomForestClassifier(n_estimators=300, random_state=42, class_weight='balanced_subsample'))
+    ])
+    pipe.fit(X_tr, y_tr)
+    y_pr = pipe.predict(X_te)
+
+    acc = accuracy_score(y_te, y_pr)
+    print(f"\nAccuracy: {acc:.4f}")
+
+    cm = confusion_matrix(y_te, y_pr)
+    classes_present = np.unique(y_te)
+    target_names_present = [INV_LABEL_MAP[i] for i in classes_present]
+
+    plt.figure(figsize=(6,5))
+    sns.heatmap(cm, annot=True, fmt='d', xticklabels=target_names_present, yticklabels=target_names_present, cmap='Blues')
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.title("Confusion Matrix")
+    plt.show()
+
+    print("\nClassification Report:\n", classification_report(y_te, y_pr, labels=classes_present, target_names=target_names_present))
+
+    joblib.dump(pipe, model_out)
+    print(f"Saved model → {model_out}")
+    return pipe
+# Extract average RGB from ROI in image
+def extract_avg_rgb(image_path, roi, gamma=2.2):
+    img = Image.open(image_path).convert("RGB")
+    x, y, w, h = roi
+    roi_img = img.crop((x, y, x+w, y+h))
+    arr = np.asarray(roi_img).astype(np.float32)/255.0
+    linear = np.power(arr, gamma)
+    mean_linear = linear.reshape(-1,3).mean(axis=0)
+    mean_display = np.power(mean_linear, 1.0/gamma)
+    rgb_255 = np.clip(np.round(mean_display*255.0),0,255).astype(np.uint8)
+    return rgb_255.tolist()
+# Predict RGB for a single tube
+def predict_from_image(image_path, rois, model):
+    results = {}
+    for tube, roi in rois.items():
+        rgb = extract_avg_rgb(image_path, roi)
+        X = np.array([rgb], dtype='float32')
+        pred_id = int(model.predict(X)[0])
+        proba = model.predict_proba(X)[0]
+        results[tube] = {
+            'ROI_RGB': {'R':int(rgb[0]), 'G':int(rgb[1]), 'B':int(rgb[2])},
+            'Pred_Label_ID': pred_id,
+            'Pred_Label_Name': INV_LABEL_MAP[pred_id],
+            'Probabilities': {INV_LABEL_MAP[i]: float(proba[i]) for i in range(len(INV_LABEL_MAP))}
+        }
+    return results
+import requests
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+from PIL import Image
+
+# ===============================
+# MAIN WORKFLOW
+# ===============================
+
+# 1️⃣ Upload CSVs
+print("Upload all MBRT CSV files for training:")
+uploaded_csvs = files.upload()
+df_list = [load_mbrt_csvlike(io.BytesIO(f)) for f in uploaded_csvs.values()]
+df_all = pd.concat(df_list, ignore_index=True)
+
+print(f"Loaded {df_all.shape[0]} readings across {df_all['sample'].nunique()} samples.")
+print(df_all[['sample','time_min','label_name','label','R','G','B']].head())
+
+# 2️⃣ Prepare features (all time points)
+X = df_all[['R','G','B']].to_numpy(dtype='float32')
+y = df_all['label'].to_numpy(dtype='int')
+
+# 3️⃣ Train model
+model = train_full_rgb_model(X, y)
+
+# ===============================
+# FETCH IMAGE FROM ESP32-CAM INSTEAD OF UPLOAD
+# ===============================
+ESP32_URL = "https://feudal-subcompensational-jamila.ngrok-free.dev/myimage"  # replace with your ESP32 URL
+
+print("\nFetching image from ESP32-CAM...")
+resp = requests.get(ESP32_URL, timeout=10)
+
+if resp.status_code == 200:
+    image_path = "captured.jpg"
+    with open(image_path, "wb") as f:
+        f.write(resp.content)
+    print("✅ Image fetched successfully from ESP32-CAM and saved as captured.jpg")
+      img = cv2.imread(image_path)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    plt.figure(figsize=(8,8))
+    plt.imshow(img_rgb)
+    plt.axis('off')
+
+    plt.title("Captured Image from ESP32-CAM")
+    plt.show()
+
+else:
+    raise Exception(f"❌ Failed to fetch image, status code: {resp.status_code}")
+
+# 5️⃣ Predict for all tubes
+results = predict_from_image(image_path, rois, model)
+
+# 6️⃣ Display predictions
+for tube, res in results.items():
+    print(f"\n{tube}: {res['Pred_Label_Name']}")
+    for label, prob in sorted(res['Probabilities'].items(), key=lambda x:x[1], reverse=True):
+        print(f"  {label}: {prob:.4f}")
+
+img = Image.open(image_path)
+plt.figure(figsize=(8,8))
+plt.imshow(img)
+ax = plt.gca()
+for tube, roi in rois.items():
+    x,y,w,h = roi
+    rect = plt.Rectangle((x,y),w,h,linewidth=2,edgecolor='red',facecolor='none')
+    ax.add_patch(rect)
+    ax.text(x, y-5, f"{tube}: {results[tube]['Pred_Label_Name']}", color='yellow', fontsize=10, weight='bold',
+            bbox=dict(facecolor='black', alpha=0.5, pad=2))
+plt.axis('off')
+plt.title("30-Min MBRT Image Predictions")
+plt.show()
+# ===============================
+# 8️⃣ Class Distribution Plot
+# ===============================
+plt.figure(figsize=(5,4))
+sns.countplot(x='label_name', data=df_all)
+plt.title('Class Distribution in Dataset')
+plt.show()
+
+# ===============================
+# 9️⃣ RGB Trends Over Time per Sample
+# ===============================
+from mpl_toolkits.mplot3d import Axes3D
+fig = plt.figure(figsize=(8,6))
+ax = fig.add_subplot(111, projection='3d')
+for lbl, color in zip([0,1,2], ['g','orange','r']):
+    subset = df_all[df_all['label']==lbl]
+    ax.scatter(subset['R'], subset['G'], subset['B'], c=color, label=INV_LABEL_MAP[lbl])
+ax.set_xlabel('R'); ax.set_ylabel('G'); ax.set_zlabel('B')
+ax.set_title('RGB Distribution by Class')
+ax.legend()
+plt.show()

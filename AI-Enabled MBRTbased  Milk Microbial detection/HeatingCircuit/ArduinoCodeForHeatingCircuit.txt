@@ -1,0 +1,40 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// DS18B20 data pin connected to GPIO4 (D2 on NodeMCU)
+#define ONE_WIRE_BUS 4  
+
+// Relay pin (connect relay IN pin to GPIO5 -> D1 on NodeMCU)
+#define RELAY_PIN 5     
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+  Serial.begin(115200);
+  sensors.begin();
+
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);  // Assume LOW = Heater OFF initially
+}
+
+void loop() {
+  sensors.requestTemperatures(); 
+  float tempC = sensors.getTempCByIndex(0); // First sensor on bus
+
+  Serial.print("Temperature: ");
+  Serial.print(tempC);
+  Serial.println(" °C");
+
+  // Control heater
+  if (tempC > 37.5) {
+    digitalWrite(RELAY_PIN, LOW);   // Turn OFF heater
+    Serial.println("Heater OFF");
+  } 
+  else if (tempC < 36.5) {
+    digitalWrite(RELAY_PIN, HIGH);  // Turn ON heater
+    Serial.println("Heater ON");
+  }
+
+  delay(1000);
+}

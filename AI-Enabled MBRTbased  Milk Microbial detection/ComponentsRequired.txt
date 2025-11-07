@@ -1,0 +1,19 @@
+HEATING CIRCUIT :
+
+ESP8266 microcontroller – For temperature control and relay switching.
+
+DS18B20 temperature sensor – For precise temperature monitoring.
+
+5V Relay module – To control the heater circuit.
+
+NPN transistor – For driving the relay.
+
+Nichrome wire – Used as the heating element.
+
+12V Adapter – Power supply for the heater.
+
+5V Buck Converter – To step down 12V to 5V for ESP8266 and relay module.
+
+DATASET COLLECTION & ML MODEL PROCESSING :
+
+ESP32 CAM  Module.
