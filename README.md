@@ -1,2 +1,4 @@
 # AI-Enabled-MBRT-based-Milk-Microbia-Detection
 An AI-enabled system that uses the Methylene Blue Reduction Test and image analysis to quickly detect microbial contamination in milk, ensuring accurate and real-time quality assessment.
+
+This project develops an AI-enabled microbial detection system for milk by automating the Methylene Blue Reduction Test (MBRT). The system maintains the milk sample at 37 °C using a controlled heating circuit, while an ESP32-CAM captures periodic images to monitor the dye’s colour change caused by microbial activity. The captured images are processed to extract RGB values, which are then analyzed using machine learning to classify milk as Fresh, Mildly Spoiled, or Spoiled. By eliminating manual observation and providing fast, accurate, and real-time detection, the system offers a low-cost and scalable solution for dairy farms, collection centres, and processing units to ensure milk safety and reduce spoilage losses.
